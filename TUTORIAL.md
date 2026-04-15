@@ -22,17 +22,17 @@ Complete walkthrough: from installation to running your first context-isolated w
 You: Write a REST API
 LLM: [writes code with full context]
 
-You: Review it                        ← Manual prompt
-LLM: [reviews but sees everything]    ← Biased review
+You: Review it                        (Manual prompt)
+LLM: [reviews but sees everything]    (Biased review)
      "I just wrote this, looks good!"
 
-You: Fix these 5 issues               ← Manual prompt
+You: Fix these 5 issues               (Manual prompt)
 LLM: [fixes]
 
-You: Run tests                        ← Manual prompt
+You: Run tests                        (Manual prompt)
 LLM: [tests fail]
 
-You: Fix the failures                 ← Manual prompt
+You: Fix the failures                 (Manual prompt)
 ...endless manual orchestration
 ```
 
@@ -48,9 +48,7 @@ LLM: [writes code automatically]
      [finds real issues]
      [fixes them automatically]
      [verifies everything works]
-     🎉 Done!
-
-You: [just watched] 🍿
+     Done!
 ```
 
 ---
@@ -73,21 +71,17 @@ cd pi-extensions
 
 You'll see:
 ```
-╔══════════════════════════════════════════════════════════════╗
-║           Pi Extensions Installer                            ║
-╚══════════════════════════════════════════════════════════════╝
+Pi Extensions Installer
 
 ✓ Pi coding agent found
 ✓ Extensions directory exists
 
-ℹ Installing all extensions...
+Installing all extensions...
 
 ✓ Installed context-workflow
 ✓ Installed funny-status
 
-═══════════════════════════════════════════════════════════════
-✓ Installed: 2 extension(s)
-═══════════════════════════════════════════════════════════════
+Installed: 2 extension(s)
 ```
 
 ---
@@ -132,7 +126,7 @@ Include comprehensive tests"
 
 **Stage 1: Write**
 ```
-📝 Writing implementation (1/10)
+Writing implementation (1/10)
 
 [LLM creates calculator.py]
 class Calculator:
@@ -151,7 +145,7 @@ def test_add():
 
 **Stage 2: Test**
 ```
-🧪 Running tests (2/10)
+Running tests (2/10)
 
 [LLM runs: pytest tests/]
 [Output: FAILED - forgot to import Calculator]
@@ -160,7 +154,7 @@ def test_add():
 
 **Stage 4: Fix**
 ```
-🔧 Fixing issues (3/10)
+Fixing issues (3/10)
 
 [LLM fixes the import]
 [Calls workflow_next]
@@ -168,16 +162,16 @@ def test_add():
 
 **Stage 2: Re-test**
 ```
-🧪 Re-testing (4/10)
+Re-testing (4/10)
 
 [LLM runs: pytest tests/]
-[Output: All tests passed!]
+[Output: All tests passed]
 [Calls workflow_test_result({ exitCode: 0 })]
 ```
 
 **Stage 3: Review (THE MAGIC HAPPENS HERE)**
 ```
-🔍 Code review (clean context) (5/10)
+Code review (clean context) (5/10)
 
 [CONTEXT COMPACTION - removes all implementation details]
 
@@ -194,7 +188,7 @@ def test_add():
 
 **Stage 4: Fix Issues**
 ```
-🔧 Fixing issues (6/10)
+Fixing issues (6/10)
 
 [LLM adds docstrings and div-by-zero test]
 [Calls workflow_next]
@@ -202,28 +196,28 @@ def test_add():
 
 **Stage 2: Verify**
 ```
-🧪 Re-testing (7/10)
+Re-testing (7/10)
 
 [Tests pass with new additions]
 ```
 
 **Stage 3: Final Review**
 ```
-🔍 Code review (clean context) (8/10)
+Code review (clean context) (8/10)
 
 [Context compacted again]
-[No issues found!]
+[No issues found]
 ```
 
 **Stage 5: Complete**
 ```
-✅ Final verification (9/10)
+Final verification (9/10)
 
-🎉 Workflow Complete!
+Workflow Complete!
 
 Iterations: 9
-Tests: ✅ All passing
-Review: ✅ No issues
+Tests: All passing
+Review: No issues
 ```
 
 ---
@@ -240,8 +234,8 @@ Context: spec + all implementation thinking
 
 Turn 2: Review
 Context: spec + implementation + decisions + debugging + everything
-         ↑ POLLUTED - LLM sees "I just wrote this"
-         ↑ BIASED - "Looks good to me!"
+         POLLUTED - LLM sees "I just wrote this"
+         BIASED - "Looks good to me!"
 ```
 
 ### With Context Isolation
@@ -254,24 +248,24 @@ Context: spec + all implementation details (needed for writing)
 
 Turn 2: Review
 Context: ONLY spec + code files
-         ↑ CLEAN - Fresh perspective
-         ↑ UNBIASED - Objective review
+         CLEAN - Fresh perspective
+         UNBIASED - Objective review
 ```
 
 ### What Gets Removed During Compaction
 
-- ❌ Implementation conversation
-- ❌ Debugging thoughts
-- ❌ Decision-making process
-- ❌ "I just wrote this" context
-- ❌ All the implementation noise
+- Implementation conversation
+- Debugging thoughts
+- Decision-making process
+- "I just wrote this" context
+- All the implementation noise
 
 ### What Gets Kept
 
-- ✅ Original spec
-- ✅ File list
-- ✅ Brief summary
-- ✅ The actual code to review
+- Original spec
+- File list
+- Brief summary
+- The actual code to review
 
 ---
 
@@ -305,13 +299,13 @@ Context: ONLY spec + code files
 
 Footer updates automatically:
 ```
-📝 Writing implementation (1/10)
-🧪 Running tests (2/10)
-🔧 Fixing issues (3/10)
-🔍 Code review (clean context) (5/10)
-✨ Improving based on review (6/10)
-✅ Final verification (9/10)
-🎉 Complete
+Writing implementation (1/10)
+Running tests (2/10)
+Fixing issues (3/10)
+Code review (clean context) (5/10)
+Improving based on review (6/10)
+Final verification (9/10)
+Complete
 ```
 
 ---
@@ -343,7 +337,7 @@ Watch it:
 5. Find issues (missing validation, weak tests)
 6. Fix issues
 7. Verify everything works
-8. Complete!
+8. Complete
 
 All automatic. You just watch.
 
@@ -370,7 +364,7 @@ Make a calculator.
 
 - Don't interrupt mid-workflow
 - Let it iterate through failures
-- Context compaction takes a moment (worth it!)
+- Context compaction takes a moment (worth it)
 - Watch the footer for progress
 
 ### 3. Use `/workflow:status` Anytime
@@ -381,9 +375,9 @@ Make a calculator.
 
 Shows:
 ```
-Stage: 🔍 Code review (clean context)
+Stage: Code review (clean context)
 Iteration: 5/10
-Tests: ✅ Passing
+Tests: Passing
 Issues found: 2
 Context: Compacted (clean)
 ```
@@ -469,7 +463,7 @@ This will:
 6. Review with clean context (catches missing edge cases)
 7. Add missing validations
 8. Verify everything
-9. Complete!
+9. Complete
 
 Time: ~5-10 minutes
 Your effort: One command
@@ -488,15 +482,6 @@ Result: Production-ready API with tests
 | Might skip steps | Never skips |
 | You orchestrate | Pi orchestrates |
 | Time-consuming | Fast |
-
-### vs. Other Workflows
-
-| Feature | Context-Workflow | Others |
-|---------|------------------|--------|
-| Context compaction | ✅ Yes | ❌ No |
-| Deterministic tests | ✅ Yes | ❌ No |
-| Unbiased reviews | ✅ Yes | ❌ No |
-| State management | ✅ Yes | ⚠️ Basic |
 
 ---
 
@@ -521,7 +506,7 @@ Apply to your actual projects:
 - Data processors
 - CLI tools
 - Utility libraries
-- Anything with tests!
+- Anything with tests
 
 ### 3. Customize If Needed
 
@@ -533,13 +518,13 @@ Edit `~/.pi/agent/extensions/context-workflow.ts` to:
 
 ### 4. Share Your Results
 
-If context-workflow helps you, star the repo and share with others!
+If context-workflow helps you, star the repo and share with others.
 
 ---
 
 ## Funny Status Bonus
 
-You also installed **funny-status**! 
+You also installed **funny-status**. 
 
 Instead of boring "Working...", you'll see:
 - "Consulting the void..."
@@ -547,20 +532,20 @@ Instead of boring "Working...", you'll see:
 - "Teaching old code new tricks..."
 - "Debugging the matrix..."
 
-Zero configuration. Just enjoy the humor while Pi works! 😄
+Zero configuration. Just enjoy the humor while Pi works.
 
 ---
 
-## Congratulations! 🎉
+## Congratulations
 
 You now know:
-- ✅ How context-workflow solves real problems
-- ✅ How to install and use it
-- ✅ How context isolation works
-- ✅ Tips for best results
-- ✅ Troubleshooting common issues
+- How context-workflow solves real problems
+- How to install and use it
+- How context isolation works
+- Tips for best results
+- Troubleshooting common issues
 
-**Go build amazing things with automated, unbiased workflows!** 🚀
+**Go build amazing things with automated, unbiased workflows.**
 
 ---
 
@@ -570,7 +555,3 @@ You now know:
 - **Issues**: [GitHub Issues](https://github.com/owainlewis/pi-extensions/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/owainlewis/pi-extensions/discussions)
 - **Pi Discord**: [Join](https://discord.com/invite/3cU7Bz4UPx)
-
----
-
-**Happy automating!** 🎉

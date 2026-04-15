@@ -2,9 +2,9 @@
 
 Powerful extensions for the [Pi coding agent](https://github.com/badlogic/pi-mono) that solve real development workflow problems.
 
-## 🚀 Extensions
+## Extensions
 
-### 🎯 [Context-Isolated Workflow](extensions/context-workflow) ⭐
+### Context-Isolated Workflow
 
 **The workflow that solves the real problem.**
 
@@ -12,43 +12,42 @@ Stop manually prompting "now review", "now test", "now fix" at every step. Stop 
 
 ```bash
 /workflow spec.md
-# Then just watch it work! 🍿
 ```
 
 **What makes it special:**
-- ✅ **Context compaction before review** - LLM reviews with fresh eyes, no implementation bias
-- ✅ **Deterministic test validation** - Parses actual exit codes, no guessing
-- ✅ **Automated iteration cycle** - write → test → review → fix → verify (all automatic)
-- ✅ **State persistence** - Handles long tasks, survives restarts
-- ✅ **Flexible input** - Spec file, prompt, or editor
+- Context compaction before review - LLM reviews with fresh eyes, no implementation bias
+- Deterministic test validation - Parses actual exit codes, no guessing
+- Automated iteration cycle - write → test → review → fix → verify (all automatic)
+- State persistence - Handles long tasks, survives restarts
+- Flexible input - Spec file, prompt, or editor
 
 **The problem it solves:**
 
 ```
-❌ BEFORE:
+BEFORE:
 You: Write this feature
 LLM: [writes code]
-You: Now review it                    ← Manual
-LLM: [reviews but context polluted]   ← Biased ("I just wrote this!")
-You: Fix these issues                 ← Manual
+You: Now review it                    (Manual)
+LLM: [reviews but context polluted]   (Biased - "I just wrote this!")
+You: Fix these issues                 (Manual)
 LLM: [fixes]
-You: Run tests                        ← Manual
+You: Run tests                        (Manual)
 ...endless manual orchestration
 
-✅ AFTER:
+AFTER:
 You: /workflow spec.md
 LLM: [writes → tests → COMPACTS CONTEXT → reviews with clean eyes → 
       finds real issues → fixes → verifies → done!]
-You: [just watched] 🍿
+You: [just watched]
 ```
 
 [Read full documentation →](extensions/context-workflow/README.md)
 
 ---
 
-### 😄 [Funny Status Messages](extensions/funny-status)
+### Funny Status Messages
 
-**Make waiting for Pi more entertaining!**
+**Make waiting for Pi more entertaining.**
 
 Replaces boring "Working..." with random hilarious messages like:
 - "Consulting the void..."
@@ -58,7 +57,7 @@ Replaces boring "Working..." with random hilarious messages like:
 - ...and 27 more!
 
 ```bash
-# Just install - works automatically!
+# Just install - works automatically
 ```
 
 Zero configuration. Pure entertainment. 30 different messages.
@@ -67,7 +66,7 @@ Zero configuration. Pure entertainment. 30 different messages.
 
 ---
 
-## 📦 Quick Install
+## Quick Install
 
 ### Install Everything
 
@@ -98,13 +97,13 @@ Then in Pi:
 
 ---
 
-## 🎯 Why Context-Workflow?
+## Why Context-Workflow?
 
 Most "workflow" extensions are just fancy prompts. **Context-workflow** actually solves real problems:
 
 ### 1. Clean Code Reviews
 
-**The key innovation:**
+The key innovation:
 
 ```typescript
 // After tests pass, BEFORE review:
@@ -121,8 +120,8 @@ ctx.compact({
 ### 2. Deterministic Validation
 
 ```typescript
-// Not: "I think tests passed" ❌
-// Yes: Parse actual exit code ✅
+// Not: "I think tests passed" (unreliable)
+// Yes: Parse actual exit code (reliable)
 workflow_test_result({ exitCode: 0 })  // Pass
 workflow_test_result({ exitCode: 1 })  // Fail
 ```
@@ -148,76 +147,76 @@ Tracks everything across long tasks:
 
 ---
 
-## 🎬 Real Example
+## Real Example
 
 ```bash
 $ pi
 
 > /workflow "Create a calculator with add/subtract/multiply/divide. Include tests."
 
-🚀 Context-Isolated Workflow Started
+Context-Isolated Workflow Started
 
 [Pi automatically:]
 
-Stage 1: 📝 Writing implementation (1/10)
+Stage 1: Writing implementation (1/10)
   - Creates calculator.py
   - Creates test_calculator.py
   → Calls workflow_next
 
-Stage 2: 🧪 Running tests (2/10)
+Stage 2: Running tests (2/10)
   - Runs: pytest tests/
   - Exit code: 1 (tests failed)
   → Calls workflow_test_result({ exitCode: 1 })
 
-Stage 4: 🔧 Fixing issues (3/10)
+Stage 4: Fixing issues (3/10)
   - Fixes the bug
   → Calls workflow_next
 
-Stage 2: 🧪 Re-testing (4/10)
+Stage 2: Re-testing (4/10)
   - Runs: pytest tests/
-  - Exit code: 0 (tests passed!)
+  - Exit code: 0 (tests passed)
   → Calls workflow_test_result({ exitCode: 0 })
 
 [CONTEXT COMPACTION - Removes all implementation details]
 
-Stage 3: 🔍 Code review (clean context) (5/10)
+Stage 3: Code review (clean context) (5/10)
   - Reviews with fresh eyes
   - Finds: missing docstrings, no div-by-zero check
   → Calls workflow_review_result({ issues: [...] })
 
-Stage 4: 🔧 Fixing issues (6/10)
+Stage 4: Fixing issues (6/10)
   - Adds docstrings
   - Adds div-by-zero error handling
   → Calls workflow_next
 
-Stage 2: 🧪 Re-testing (7/10)
+Stage 2: Re-testing (7/10)
   - Tests still pass
   → workflow_test_result({ exitCode: 0 })
 
 [CONTEXT COMPACTION AGAIN]
 
-Stage 3: 🔍 Code review (clean context) (8/10)
+Stage 3: Code review (clean context) (8/10)
   - Reviews again
-  - No issues found!
+  - No issues found
   → workflow_review_result({ issues: [] })
 
-Stage 5: ✅ Final verification (9/10)
+Stage 5: Final verification (9/10)
   - Final test run
   - Everything works
   → workflow_complete
 
-🎉 Workflow Complete!
+Workflow Complete!
 
 Iterations: 9
-Tests: ✅ All passing
-Review: ✅ No issues
+Tests: All passing
+Review: No issues
 
-You: [just watched it happen] 🍿
+You: [just watched it happen]
 ```
 
 ---
 
-## 📖 Documentation
+## Documentation
 
 - **[Context-Workflow README](extensions/context-workflow/README.md)** - Complete documentation
 - **[Funny Status README](extensions/funny-status/README.md)** - Usage and customization
@@ -226,7 +225,7 @@ You: [just watched it happen] 🍿
 
 ---
 
-## 🎓 Tutorial
+## Tutorial
 
 See [TUTORIAL.md](TUTORIAL.md) for a complete walkthrough:
 1. Installation (2 min)
@@ -236,7 +235,7 @@ See [TUTORIAL.md](TUTORIAL.md) for a complete walkthrough:
 
 ---
 
-## 💡 Usage Examples
+## Usage Examples
 
 ### Example 1: REST API
 
@@ -279,12 +278,12 @@ Then:
 /workflow
 # Editor opens - write your spec
 # Save and exit
-# Watch it execute!
+# Watch it execute
 ```
 
 ---
 
-## 🔧 Commands Reference
+## Commands Reference
 
 ### Context-Workflow
 
@@ -296,25 +295,25 @@ Then:
 
 Watch the footer:
 ```
-📝 Writing implementation (1/10)
-🧪 Running tests (2/10)
-🔍 Code review (clean context) (5/10)
-✨ Improving based on review (6/10)
-✅ Final verification (9/10)
-🎉 Complete
+Writing implementation (1/10)
+Running tests (2/10)
+Code review (clean context) (5/10)
+Improving based on review (6/10)
+Final verification (9/10)
+Complete
 ```
 
 ---
 
-## 🤔 FAQ
+## FAQ
 
 ### Q: Is this just a fancy prompt?
 
 **No!** It has:
-- ✅ State management (tracks stage, iteration, issues)
-- ✅ Context compaction (removes bias before review)
-- ✅ Deterministic validation (parses exit codes)
-- ✅ Automated progression (no manual steps)
+- State management (tracks stage, iteration, issues)
+- Context compaction (removes bias before review)
+- Deterministic validation (parses exit codes)
+- Automated progression (no manual steps)
 
 ### Q: How is review "unbiased"?
 
@@ -325,10 +324,10 @@ Before review, it **compacts the context** - removing all implementation details
 - The actual code to review
 
 Not:
-- ❌ Implementation conversation
-- ❌ Debugging thoughts  
-- ❌ Decision-making process
-- ❌ "I just wrote this" bias
+- Implementation conversation
+- Debugging thoughts  
+- Decision-making process
+- "I just wrote this" bias
 
 ### Q: What if tests never pass?
 
@@ -350,7 +349,7 @@ Auto-detects:
 
 ---
 
-## 🚀 Why This Matters
+## Why This Matters
 
 ### The Old Way (Manual)
 
@@ -382,7 +381,6 @@ You: /workflow spec.md
 → With clean reviews
 → Deterministic validation
 → State tracking
-→ You: 🍿
 ```
 
 **Benefits:**
@@ -394,14 +392,14 @@ You: /workflow spec.md
 
 ---
 
-## 🛠️ Requirements
+## Requirements
 
 - Pi coding agent ([Installation guide](https://github.com/badlogic/pi-mono))
 - Node.js (for Pi)
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -413,21 +411,21 @@ Ideas for extensions:
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Pi coding agent](https://github.com/badlogic/pi-mono) by @badlogic
 - Built to solve real development workflow problems
-- Community feedback welcome!
+- Community feedback welcome
 
 ---
 
-## 📞 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/owainlewis/pi-extensions/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/owainlewis/pi-extensions/discussions)
@@ -435,12 +433,4 @@ MIT License - see [LICENSE](LICENSE) for details
 
 ---
 
-## ⭐ Star This Repo
-
-If context-workflow solves your workflow problems, please star the repo to help others discover it!
-
----
-
-**Made with ❤️ for developers tired of manual workflow orchestration**
-
-**Happy automating!** 🚀
+**Made for developers tired of manual workflow orchestration**

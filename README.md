@@ -2,6 +2,22 @@
 
 Powerful extensions for the [Pi coding agent](https://github.com/badlogic/pi-mono) that solve real development workflow problems.
 
+## Demo
+
+See it in action:
+
+```bash
+cd demo
+pi
+/workflow ../examples/specs/user-api.md
+```
+
+Watches Pi build a complete FastAPI user management API with tests, automatically iterating through write → test → review → fix cycles with clean, unbiased code reviews.
+
+[View demo details →](demo/README.md)
+
+---
+
 ## Extensions
 
 ### Context-Isolated Workflow
@@ -280,6 +296,15 @@ Then:
 # Save and exit
 # Watch it execute
 ```
+
+### Example 4: Demo Project
+
+```bash
+cd demo
+/workflow ../examples/specs/user-api.md
+```
+
+Builds a complete FastAPI user management API with CRUD operations, validation, tests, and documentation.
 
 ---
 

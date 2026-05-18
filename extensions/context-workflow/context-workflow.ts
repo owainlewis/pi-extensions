@@ -227,17 +227,35 @@ export default function (pi: ExtensionAPI) {
             message = "✅ Tests passed!\n\n**Stage 3: Code Review (Clean Context)**\n\nCompacting context for unbiased review...";
             
             // CRITICAL: Compact context before review
+            // The review prompt must be sent AFTER compaction completes, not immediately
+            const reviewPrompt = "Review the code with fresh eyes. Read all files that were created and check for: 1) Code quality and readability, 2) Test coverage, 3) Edge cases, 4) Error handling, 5) Best practices. Call workflow_review_result with your findings.";
+            
             ctx.compact({
               customInstructions: "Keep only: 1) The original spec/description, 2) List of files created, 3) Brief summary of what was implemented. Remove all implementation details and conversation history.",
               onComplete: () => {
                 if (workflow) {
                   workflow.contextCompacted = true;
                   updateStatus(ctx);
+                  // Send the review prompt AFTER compaction completes
+                  pi.sendUserMessage(reviewPrompt, { deliverAs: "followUp" });
+                }
+              },
+              onError: (error) => {
+                if (ctx.hasUI) {
+                  ctx.ui.notify(`Compaction failed: ${error.message}`, "error");
+                }
+                // Continue with review anyway, but warn the user
+                if (workflow) {
+                  pi.sendUserMessage(
+                    `Note: Context compaction failed (${error.message}). Proceeding with review using full context. ` + reviewPrompt,
+                    { deliverAs: "followUp" }
+                  );
                 }
               },
             });
             
-            nextPrompt = "Review the code with fresh eyes. Read all files that were created and check for: 1) Code quality and readability, 2) Test coverage, 3) Edge cases, 4) Error handling, 5) Best practices. Call workflow_review_result with your findings.";
+            // Don't set nextPrompt - it's handled in onComplete/onError callbacks
+            nextPrompt = null;
           } else {
             nextStage = "fix";
             message = "❌ Tests failed!\n\n**Stage 4: Fixing Issues**\n\nFixing test failures...";

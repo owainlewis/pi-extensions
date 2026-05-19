@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 type AgentName = "planner" | "builder" | "evaluator";
 type Verdict = "PASS" | "FAIL" | "UNKNOWN";
@@ -100,9 +101,96 @@ interface WorkflowStep {
 	detail?: string;
 }
 
+interface PbeLogger {
+	runId: string;
+	log(message: string, details?: unknown): void;
+}
+
 const MAX_ROUNDS = 3;
 const DEFAULT_CHECK_TIMEOUT_SECONDS = 120;
 const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
+const LOG_DETAIL_LIMIT = 6000;
+
+const ANSI = {
+	reset: "\u001b[0m",
+	dim: "\u001b[2m",
+	bold: "\u001b[1m",
+	green: "\u001b[38;5;114m",
+	softGreen: "\u001b[38;5;108m",
+	amber: "\u001b[38;5;179m",
+	red: "\u001b[38;5;167m",
+	gray: "\u001b[38;5;245m",
+	cyan: "\u001b[38;5;110m",
+};
+
+function color(text: string, code: string): string {
+	return `${code}${text}${ANSI.reset}`;
+}
+
+function statusColor(status: StepStatus): string {
+	if (status === "passed") return ANSI.green;
+	if (status === "failed") return ANSI.red;
+	if (status === "running") return ANSI.amber;
+	return ANSI.gray;
+}
+
+function colorEvaluationLine(line: string): string {
+	if (line.startsWith("✓")) return color(line, ANSI.green);
+	if (line.startsWith("✗")) return color(line, ANSI.red);
+	if (line.startsWith("▶")) return color(line, ANSI.amber);
+	if (line.startsWith("○")) return color(line, ANSI.gray);
+	return line;
+}
+
+function formatLogDetails(details: unknown): string {
+	if (details === undefined) return "";
+	const text = typeof details === "string" ? details : JSON.stringify(details, null, 2);
+	const truncated = text.length > LOG_DETAIL_LIMIT ? `${text.slice(0, LOG_DETAIL_LIMIT)}…` : text;
+	return `\n${truncated}`;
+}
+
+function createPbeLogger(cwd: string, kind: string, target: string): PbeLogger {
+	const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 8)}`;
+	const logDir = path.join(cwd, ".pi", "pbe");
+	const logPath = path.join(logDir, "pbe.log");
+	const logger: PbeLogger = {
+		runId,
+		log(message, details) {
+			try {
+				fs.mkdirSync(logDir, { recursive: true });
+				fs.appendFileSync(
+					logPath,
+					`[${new Date().toISOString()}] [${runId}] ${message}${formatLogDetails(details)}\n`,
+				);
+			} catch {
+				// Logging must never break the harness.
+			}
+		},
+	};
+	logger.log(`starting ${kind} run`, { cwd, target, logPath });
+	return logger;
+}
+
+function workspaceFooterLine(ctx: any, footerData: any, branchFallback = ""): string {
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	let cwd = ctx.cwd as string;
+	if (home && cwd.startsWith(home)) cwd = `~${cwd.slice(home.length)}`;
+	const currentBranch = footerData?.getGitBranch?.() ?? branchFallback;
+	return currentBranch ? `${cwd} (${currentBranch})` : cwd;
+}
+
+function setPbeReadyFooter(ctx: any): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setFooter((_tui: any, _theme: any, footerData: any) => ({
+		render(width: number) {
+			return [
+				truncateToWidth(color(workspaceFooterLine(ctx, footerData), ANSI.dim), width),
+				truncateToWidth(`${color("PBE ready", ANSI.softGreen)} ${color("•", ANSI.gray)} /pbe-issue <issue> ${color("•", ANSI.gray)} /pbe-run <plan.md> ${color("•", ANSI.gray)} /pbe-status`, width),
+			];
+		},
+		invalidate() {},
+	}));
+}
 
 function slugify(input: string): string {
 	return (
@@ -467,7 +555,7 @@ async function runPiAgent(options: RunAgentOptions): Promise<string> {
 	});
 }
 
-function createIssueWorkflowUi(ctx: any, initialTitle: string) {
+function createIssueWorkflowUi(ctx: any, initialTitle: string, logger?: PbeLogger) {
 	const steps: WorkflowStep[] = [
 		{ id: "fetch_issue", label: "Fetching issue", status: "pending" },
 		{ id: "write_plan", label: "Writing plan", status: "pending" },
@@ -487,41 +575,86 @@ function createIssueWorkflowUi(ctx: any, initialTitle: string) {
 	let activeStep: WorkflowStepId = "fetch_issue";
 	let detail = "starting";
 	let evaluationLines: string[] = [];
+	let roundFailures: string[] = [];
+	let footerInstalled = false;
 
 	const symbol = (status: StepStatus) => {
-		if (status === "passed") return "✓";
-		if (status === "failed") return "✗";
-		if (status === "running") return "▶";
-		if (status === "skipped") return "-";
-		return "○";
+		if (status === "passed") return color("✓", ANSI.green);
+		if (status === "failed") return color("✗", ANSI.red);
+		if (status === "running") return color("▶", ANSI.amber);
+		if (status === "skipped") return color("-", ANSI.gray);
+		return color("○", ANSI.gray);
+	};
+
+	const installFooter = () => {
+		if (footerInstalled || !ctx.hasUI) return;
+		ctx.ui.setFooter((_tui: any, _theme: any, footerData: any) => ({
+			render(width: number) {
+				const activeIndex = steps.findIndex((step) => step.id === activeStep);
+				const active = steps[activeIndex] ?? steps[0];
+				const failedRounds = roundFailures.length ? ` • failed rounds: ${roundFailures.length}` : "";
+				const activeDetail = detail ? ` • ${truncate(detail, 90)}` : "";
+				const evalLine = evaluationLines.length ? `Eval: ${truncate(evaluationLines[evaluationLines.length - 1], 120)}` : "";
+				const footerLines = [
+					color(workspaceFooterLine(ctx, footerData, branch), ANSI.dim),
+					`${color("PBE", ANSI.softGreen)} ${color(`${activeIndex + 1}/${steps.length}`, statusColor(active.status))}: ${color(active.label, statusColor(active.status))} ${color("•", ANSI.gray)} round ${round}/${maxRounds}${failedRounds}${activeDetail}`,
+					`${color("Issue:", ANSI.cyan)} ${title}${branch ? ` ${color("•", ANSI.gray)} ${color("Branch:", ANSI.cyan)} ${branch}` : ""}${evalLine ? ` ${color("•", ANSI.gray)} ${colorEvaluationLine(evalLine)}` : ""}`,
+				];
+				return footerLines.map((line) => truncateToWidth(line, width));
+			},
+			invalidate() {},
+		}));
+		footerInstalled = true;
 	};
 
 	const render = () => {
+		installFooter();
 		const activeIndex = steps.findIndex((step) => step.id === activeStep);
 		const active = steps[activeIndex] ?? steps[0];
-		ctx.ui.setStatus("pbe", `${active.label} (${activeIndex + 1}/${steps.length})`);
+		const failedRounds = roundFailures.length ? ` • failed rounds: ${roundFailures.length}` : "";
+		const compactDetail = detail ? ` • ${truncate(detail, 70)}` : "";
+		ctx.ui.setStatus(
+			"pbe",
+			`PBE ${activeIndex + 1}/${steps.length} ${active.label} • round ${round}/${maxRounds}${failedRounds}${compactDetail}`,
+		);
 
 		const lines = [
-			"PBE Issue Harness",
-			`Issue: ${title}`,
-			branch ? `Branch: ${branch}` : "Branch: pending",
-			`Round: ${round}/${maxRounds}`,
+			color("PBE Issue Harness", ANSI.softGreen + ANSI.bold),
+			`${color("Issue:", ANSI.cyan)} ${title}`,
+			branch ? `${color("Branch:", ANSI.cyan)} ${branch}` : `${color("Branch:", ANSI.cyan)} ${color("pending", ANSI.gray)}`,
+			`${color("Round:", ANSI.cyan)} ${round}/${maxRounds}${failedRounds ? color(failedRounds, ANSI.red) : ""}`,
 			"",
 			...steps.map((step, index) => {
-				const suffix = step.detail ? ` — ${step.detail}` : "";
-				return `${symbol(step.status)} ${step.label.padEnd(28)} ${index + 1}/${steps.length}${suffix}`;
+				const suffix = step.detail ? color(` — ${step.detail}`, step.status === "failed" ? ANSI.red : ANSI.dim) : "";
+				return `${symbol(step.status)} ${color(step.label.padEnd(28), statusColor(step.status))} ${color(`${index + 1}/${steps.length}`, ANSI.gray)}${suffix}`;
 			}),
 		];
 
-		if (evaluationLines.length > 0) {
-			lines.push("", "Evaluations:", ...evaluationLines.map((line) => `  ${line}`));
+		if (roundFailures.length > 0) {
+			lines.push("", color("Failed rounds:", ANSI.red), ...roundFailures.map((line) => `  ${color(line, ANSI.red)}`));
 		}
-		if (detail) lines.push("", `Detail: ${detail}`);
+		if (evaluationLines.length > 0) {
+			lines.push("", color("Evaluations:", ANSI.cyan), ...evaluationLines.map((line) => `  ${colorEvaluationLine(line)}`));
+		}
+		if (detail) lines.push("", `${color("Detail:", ANSI.cyan)} ${color(detail, ANSI.dim)}`);
 
-		ctx.ui.setWidget("pbe-issue-progress", lines);
+		ctx.ui.setWidget("pbe-issue-progress", (_tui: any, _theme: any) => ({
+			render(width: number) {
+				const rendered: string[] = [];
+				for (const line of lines) {
+					const wrapped = wrapTextWithAnsi(line, Math.max(20, width - 2));
+					for (const wrappedLine of wrapped) {
+						rendered.push(truncateToWidth(` ${wrappedLine}`, width));
+					}
+				}
+				return rendered;
+			},
+			invalidate() {},
+		}), { placement: "aboveEditor" });
 	};
 
 	const setStep = (id: WorkflowStepId, status: StepStatus, stepDetail?: string) => {
+		logger?.log(`step ${id} ${status}`, stepDetail);
 		activeStep = id;
 		for (const step of steps) {
 			if (step.id === id) {
@@ -548,19 +681,29 @@ function createIssueWorkflowUi(ctx: any, initialTitle: string) {
 		},
 		setStep,
 		detail(message: string) {
+			logger?.log("detail", message);
 			detail = truncate(message, 160);
 			render();
 		},
 		setEvaluations(lines: string[]) {
+			logger?.log("evaluation display update", lines);
 			evaluationLines = lines;
 			render();
 		},
+		addRoundFailure(failedRound: number, summary: string) {
+			logger?.log(`round ${failedRound} failed`, summary);
+			roundFailures.push(`Round ${failedRound}: ${truncate(summary, 180)}`);
+			render();
+		},
 		failActive(message: string) {
+			logger?.log("active step failed", message);
 			setStep(activeStep, "failed", truncate(message, 80));
 		},
 		clear() {
 			ctx.ui.setStatus("pbe", undefined);
 			ctx.ui.setWidget("pbe-issue-progress", undefined);
+			setPbeReadyFooter(ctx);
+			footerInstalled = false;
 		},
 	};
 }
@@ -573,6 +716,63 @@ async function fetchGitHubIssue(cwd: string, issueRef: string, signal?: AbortSig
 		signal,
 	);
 	return JSON.parse(result.stdout) as GitHubIssue;
+}
+
+function issueLabelNames(issue: GitHubIssue): string[] {
+	return (issue.labels ?? [])
+		.map((label) => (typeof label === "string" ? label : label.name ?? ""))
+		.filter(Boolean);
+}
+
+function shouldMarkIssueInProgress(): boolean {
+	const value = (process.env.PBE_MARK_IN_PROGRESS ?? "true").trim().toLowerCase();
+	return !["0", "false", "no", "off"].includes(value);
+}
+
+async function findInProgressLabel(cwd: string, issue: GitHubIssue, signal?: AbortSignal): Promise<string | undefined> {
+	const configured = process.env.PBE_IN_PROGRESS_LABEL?.trim();
+	if (configured) return configured;
+
+	const candidates = ["in progress", "in-progress", "In Progress", "status: in progress", "Status: In Progress"];
+	const currentLabels = issueLabelNames(issue);
+	const current = candidates.find((candidate) =>
+		currentLabels.some((label) => label.toLowerCase() === candidate.toLowerCase()),
+	);
+	if (current) return current;
+
+	const labelList = await runProcess("gh", ["label", "list", "--limit", "200", "--json", "name"], { cwd, signal });
+	if (labelList.exitCode !== 0) return undefined;
+
+	try {
+		const labels = JSON.parse(labelList.stdout) as Array<{ name?: string }>;
+		const byLowerName = new Map(
+			labels
+				.map((label) => label.name)
+				.filter((name): name is string => Boolean(name))
+				.map((name) => [name.toLowerCase(), name]),
+		);
+		for (const candidate of candidates) {
+			const label = byLowerName.get(candidate.toLowerCase());
+			if (label) return label;
+		}
+	} catch {
+		// Ignore malformed gh output; marking in-progress is best-effort.
+	}
+
+	return undefined;
+}
+
+async function markIssueInProgress(cwd: string, issue: GitHubIssue, signal?: AbortSignal): Promise<string> {
+	if (!shouldMarkIssueInProgress()) return "in-progress marking disabled";
+
+	const label = await findInProgressLabel(cwd, issue, signal);
+	if (!label) return "no in-progress label found";
+
+	const result = await runProcess("gh", ["issue", "edit", String(issue.number), "--add-label", label], { cwd, signal });
+	if (result.exitCode === 0) return `marked in progress (${label})`;
+
+	const details = (result.stderr || result.stdout).trim();
+	return `could not mark in progress${details ? `: ${truncate(details, 120)}` : ""}`;
 }
 
 async function ensureGitReady(cwd: string, signal?: AbortSignal): Promise<void> {
@@ -777,6 +977,18 @@ Inspect the current repository state and current diff if available. Return the E
 	};
 }
 
+function summarizeRoundFailure(commandFailures: CommandCheckResult[], reviewResult: ReviewResult): string {
+	const parts: string[] = [];
+	if (commandFailures.length > 0) {
+		parts.push(`${commandFailures.length} default eval(s) failed`);
+		parts.push(...commandFailures.slice(0, 2).map((result) => result.label));
+	}
+	if (reviewResult.status !== "passed") {
+		parts.push(`review ${reviewResult.verdict}`);
+	}
+	return parts.join("; ") || "unknown failure";
+}
+
 function formatEvaluationFeedback(commandResults: CommandCheckResult[], reviewResult: ReviewResult): string {
 	const failedCommands = commandResults.filter((result) => result.blocking && result.status !== "passed");
 	const parts: string[] = ["# Evaluation Failed"];
@@ -806,6 +1018,7 @@ async function runBuildEvaluateLoop(options: {
 	planMarkdown: string;
 	signal?: AbortSignal;
 	ui?: ReturnType<typeof createIssueWorkflowUi>;
+	logger?: PbeLogger;
 }): Promise<BuildEvaluateResult> {
 	let feedback = "";
 	let lastBuilderReport = "";
@@ -823,8 +1036,10 @@ async function runBuildEvaluateLoop(options: {
 
 	const verifyCommands = extractVerifyCommands(options.planMarkdown);
 	const checks = verifyCommands.map(commandToCheck);
+	options.logger?.log("verify commands extracted", verifyCommands);
 
 	for (let round = 1; round <= MAX_ROUNDS; round++) {
+		options.logger?.log(`round ${round} started`);
 		options.ui?.setRound(round);
 		options.ui?.setStep("write_code", "running", round > 1 ? "fixing evaluation feedback" : "builder running");
 		lastBuilderReport = await runBuilderRound(
@@ -836,6 +1051,7 @@ async function runBuildEvaluateLoop(options: {
 			(message) => options.ui?.detail(message),
 			options.signal,
 		);
+		options.logger?.log(`round ${round} builder completed`, lastBuilderReport);
 		options.ui?.setStep("write_code", "passed", `round ${round} complete`);
 
 		options.ui?.setStep("default_evaluations", "running", checks.length ? `${checks.length} check(s)` : "none configured");
@@ -851,6 +1067,14 @@ async function runBuildEvaluateLoop(options: {
 					...checks.slice(i + 1).map((pending) => `○ ${pending.label}`),
 				]);
 				const result = await runShellCheck(options.cwd, check, options.signal);
+				options.logger?.log(`default evaluation ${result.status}: ${check.command}`, {
+					exitCode: result.exitCode,
+					durationMs: result.durationMs,
+					timedOut: result.timedOut,
+					summary: result.summary,
+					stdout: result.stdout.slice(0, 3000),
+					stderr: result.stderr.slice(0, 3000),
+				});
 				lastCommandResults.push(result);
 			}
 			options.ui?.setEvaluations(
@@ -876,6 +1100,7 @@ async function runBuildEvaluateLoop(options: {
 			(message) => options.ui?.detail(message),
 			options.signal,
 		);
+		options.logger?.log(`round ${round} review ${lastReviewResult.verdict}`, lastReviewResult.report);
 		options.ui?.setStep(
 			"review",
 			lastReviewResult.status === "passed" ? "passed" : "failed",
@@ -884,6 +1109,7 @@ async function runBuildEvaluateLoop(options: {
 
 		const passed = commandFailures.length === 0 && lastReviewResult.status === "passed";
 		if (passed) {
+			options.logger?.log(`round ${round} passed`);
 			return {
 				passed: true,
 				round,
@@ -894,9 +1120,14 @@ async function runBuildEvaluateLoop(options: {
 			};
 		}
 
+		const failureSummary = summarizeRoundFailure(commandFailures, lastReviewResult);
+		options.logger?.log(`round ${round} failed`, { failureSummary, commandFailures, review: lastReviewResult.report });
+		options.ui?.addRoundFailure(round, failureSummary);
+		options.ui?.detail(round < MAX_ROUNDS ? `round ${round} failed — retrying` : `round ${round} failed — no retries left`);
 		feedback = formatEvaluationFeedback(lastCommandResults, lastReviewResult);
 	}
 
+	options.logger?.log("run failed after max rounds", feedback);
 	return {
 		passed: false,
 		round: MAX_ROUNDS,
@@ -962,6 +1193,7 @@ async function commitPushAndOpenPr(
 	result: BuildEvaluateResult,
 	ui: ReturnType<typeof createIssueWorkflowUi>,
 	signal?: AbortSignal,
+	logger?: PbeLogger,
 ): Promise<string> {
 	ui.setStep("commit", "running", "git add/commit");
 	await runRequiredProcess("git", ["add", "-A"], cwd, signal);
@@ -973,10 +1205,12 @@ async function commitPushAndOpenPr(
 		cwd,
 		signal,
 	);
+	logger?.log("commit created", makeCommitTitle(issue));
 	ui.setStep("commit", "passed", "committed");
 
 	ui.setStep("push", "running", branch);
 	await runRequiredProcess("git", ["push", "-u", "origin", branch], cwd, signal);
+	logger?.log("branch pushed", branch);
 	ui.setStep("push", "passed", "pushed");
 
 	ui.setStep("open_pr", "running", "gh pr create");
@@ -988,22 +1222,28 @@ async function commitPushAndOpenPr(
 		signal,
 	);
 	const prUrl = pr.stdout.trim();
+	logger?.log("pull request opened", prUrl || pr.stdout || pr.stderr);
 	ui.setStep("open_pr", "passed", prUrl || "opened");
 	return prUrl;
 }
 
 async function runIssueHarness(cwd: string, issueRef: string, signal: AbortSignal | undefined, ctx: any, pi: ExtensionAPI) {
-	const ui = createIssueWorkflowUi(ctx, issueRef);
+	const logger = createPbeLogger(cwd, "issue", issueRef);
+	const ui = createIssueWorkflowUi(ctx, issueRef, logger);
 	ui.setStep("fetch_issue", "running", issueRef);
 
 	await ensureGitReady(cwd, signal);
 	const issue = await fetchGitHubIssue(cwd, issueRef, signal);
+	logger.log("issue fetched", { number: issue.number, title: issue.title, url: issue.url });
 	ui.setTitle(`#${issue.number} ${issue.title}`);
-	ui.setStep("fetch_issue", "passed", "fetched");
+	ui.detail("marking issue in progress");
+	const inProgressResult = await markIssueInProgress(cwd, issue, signal);
+	ui.setStep("fetch_issue", "passed", `fetched; ${inProgressResult}`);
 
 	ui.setStep("write_plan", "running", "planner running");
 	const plan = await generateIssuePlan(cwd, issue, (message) => ui.detail(message), signal);
 	const planPath = await writeIssuePlan(cwd, issue, plan);
+	logger.log("plan written", { planPath: relativeForPrompt(cwd, planPath), plan });
 	ui.setStep("write_plan", "passed", relativeForPrompt(cwd, planPath));
 
 	if (planIsBlocked(plan)) {
@@ -1014,14 +1254,16 @@ async function runIssueHarness(cwd: string, issueRef: string, signal: AbortSigna
 
 	ui.setStep("create_branch", "running", "git checkout -b");
 	const branch = await createIssueBranch(cwd, issue, signal);
+	logger.log("branch created", branch);
 	ui.setBranch(branch);
 	ui.setStep("create_branch", "passed", branch);
 
-	const result = await runBuildEvaluateLoop({ cwd, issue, planPath, planMarkdown: plan, signal, ui });
+	const result = await runBuildEvaluateLoop({ cwd, issue, planPath, planMarkdown: plan, signal, ui, logger });
 	if (!result.passed) {
 		ui.setStep("commit", "skipped", "evaluations failed");
 		ui.setStep("push", "skipped", "evaluations failed");
 		ui.setStep("open_pr", "skipped", "evaluations failed");
+		logger.log("issue harness blocked", result.feedback);
 		pi.sendMessage(
 			{
 				customType: "pbe-issue-failed",
@@ -1033,7 +1275,8 @@ async function runIssueHarness(cwd: string, issueRef: string, signal: AbortSigna
 		return;
 	}
 
-	const prUrl = await commitPushAndOpenPr(cwd, issue, branch, planPath, result, ui, signal);
+	const prUrl = await commitPushAndOpenPr(cwd, issue, branch, planPath, result, ui, signal, logger);
+	logger.log("issue harness complete", { issue: issue.number, branch, planPath: relativeForPrompt(cwd, planPath), prUrl });
 	pi.sendMessage(
 		{
 			customType: "pbe-issue-complete",
@@ -1045,19 +1288,25 @@ async function runIssueHarness(cwd: string, issueRef: string, signal: AbortSigna
 }
 
 async function runLocalPlan(cwd: string, planFile: string, signal: AbortSignal | undefined, ctx: any, pi: ExtensionAPI) {
+	const logger = createPbeLogger(cwd, "local", planFile);
 	const planPath = path.resolve(cwd, planFile);
-	if (!fs.existsSync(planPath)) throw new Error(`Plan/task file not found: ${planPath}`);
+	if (!fs.existsSync(planPath)) {
+		logger.log("local plan missing", planPath);
+		throw new Error(`Plan/task file not found: ${planPath}`);
+	}
 	const planMarkdown = await readFile(planPath, "utf8");
-	const ui = createIssueWorkflowUi(ctx, path.basename(planPath));
+	logger.log("local plan loaded", { planPath: relativeForPrompt(cwd, planPath), plan: planMarkdown });
+	const ui = createIssueWorkflowUi(ctx, path.basename(planPath), logger);
 	ui.setStep("fetch_issue", "skipped", "local plan");
 	ui.setStep("write_plan", "passed", relativeForPrompt(cwd, planPath));
 	ui.setStep("create_branch", "skipped", "local run");
 
-	const result = await runBuildEvaluateLoop({ cwd, planPath, planMarkdown, signal, ui });
+	const result = await runBuildEvaluateLoop({ cwd, planPath, planMarkdown, signal, ui, logger });
 	ui.setStep("commit", "skipped", "local run");
 	ui.setStep("push", "skipped", "local run");
 	ui.setStep("open_pr", "skipped", "local run");
 
+	logger.log(result.passed ? "local run passed" : "local run failed", result.passed ? result.reviewResult.report : result.feedback);
 	pi.sendMessage(
 		{
 			customType: result.passed ? "pbe-run-result" : "pbe-run-failed",
@@ -1071,6 +1320,10 @@ async function runLocalPlan(cwd: string, planFile: string, signal: AbortSignal |
 }
 
 export default function pbeExtension(pi: ExtensionAPI): void {
+	pi.on("session_start", async (_event, ctx) => {
+		setPbeReadyFooter(ctx);
+	});
+
 	pi.registerCommand("pbe-issue", {
 		description: "Fetch a GitHub issue, plan, build, evaluate, commit, push, and open a PR",
 		handler: async (args, ctx) => {
@@ -1086,6 +1339,12 @@ export default function pbeExtension(pi: ExtensionAPI): void {
 				await runIssueHarness(ctx.cwd, issueRef, ctx.signal, ctx, pi);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
+				try {
+					fs.mkdirSync(path.join(ctx.cwd, ".pi", "pbe"), { recursive: true });
+					fs.appendFileSync(path.join(ctx.cwd, ".pi", "pbe", "pbe.log"), `[${new Date().toISOString()}] [command-error] /pbe-issue failed\n${message}\n`);
+				} catch {
+					// ignore logging failures
+				}
 				ctx.ui.notify(`PBE issue harness failed: ${message}`, "error");
 				pi.sendMessage(
 					{
@@ -1097,6 +1356,8 @@ export default function pbeExtension(pi: ExtensionAPI): void {
 				);
 			} finally {
 				ctx.ui.setStatus("pbe", undefined);
+				ctx.ui.setWidget("pbe-issue-progress", undefined);
+				setPbeReadyFooter(ctx);
 			}
 		},
 	});
@@ -1114,6 +1375,12 @@ export default function pbeExtension(pi: ExtensionAPI): void {
 				await runLocalPlan(ctx.cwd, planFile, ctx.signal, ctx, pi);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
+				try {
+					fs.mkdirSync(path.join(ctx.cwd, ".pi", "pbe"), { recursive: true });
+					fs.appendFileSync(path.join(ctx.cwd, ".pi", "pbe", "pbe.log"), `[${new Date().toISOString()}] [command-error] /pbe-run failed\n${message}\n`);
+				} catch {
+					// ignore logging failures
+				}
 				ctx.ui.notify(`PBE run failed: ${message}`, "error");
 				pi.sendMessage(
 					{
@@ -1126,6 +1393,7 @@ export default function pbeExtension(pi: ExtensionAPI): void {
 			} finally {
 				ctx.ui.setStatus("pbe", undefined);
 				ctx.ui.setWidget("pbe-issue-progress", undefined);
+				setPbeReadyFooter(ctx);
 			}
 		},
 	});
@@ -1136,7 +1404,7 @@ export default function pbeExtension(pi: ExtensionAPI): void {
 			pi.sendMessage(
 				{
 					customType: "pbe-status",
-					content: `# PBE Harness Status\n\nAvailable commands:\n\n- \`/pbe-issue <issue-number-or-url>\` — full GitHub issue → plan → build → eval → PR flow.\n- \`/pbe-run <plan.md|task.md>\` — local build/eval/review loop without git or PR automation.\n\nRequired issue flow tools: \`git\`, \`gh\`, and a clean working tree.`,
+					content: `# PBE Harness Status\n\nAvailable commands:\n\n- \`/pbe-issue <issue-number-or-url>\` — full GitHub issue → plan → build → eval → PR flow.\n- \`/pbe-run <plan.md|task.md>\` — local build/eval/review loop without git or PR automation.\n\nRequired issue flow tools: \`git\`, \`gh\`, and a clean working tree.\n\nRuns are logged to \`.pi/pbe/pbe.log\` in the current workspace.\n\nIssue flow marks issues in progress best-effort by adding an existing \`in progress\` / \`in-progress\` label. Set \`PBE_IN_PROGRESS_LABEL\` to use a custom label, or \`PBE_MARK_IN_PROGRESS=false\` to disable it.`,
 					display: true,
 				},
 				{ triggerTurn: false },

@@ -50,9 +50,21 @@ docs/issues/<issue-number>/plan.md
 
 No approval gate is used. If evaluations pass, the harness commits, pushes, and opens a PR referencing the issue.
 
+When `/pbe-issue` starts, it best-effort marks the issue as in progress by adding an existing `in progress` / `in-progress` label. Configure a custom existing label with `PBE_IN_PROGRESS_LABEL="Status: In Progress"`, or disable this with `PBE_MARK_IN_PROGRESS=false`.
+
 ### `/pbe-run <plan.md|task.md>`
 
 Runs the local Builder → default evaluations → review loop without git branch/commit/PR automation.
+
+## Run logs
+
+Each `/pbe-issue` and `/pbe-run` appends diagnostic events to the current workspace log:
+
+```text
+.pi/pbe/pbe.log
+```
+
+The log includes a run ID, start event, step transitions, planner/builder/reviewer progress, default evaluation command results with output excerpts, failed-round summaries, PR creation, and top-level command errors. Logging is best-effort and never blocks the harness.
 
 ## Evaluations
 
@@ -100,11 +112,11 @@ Round: 1/3
 ○ Opening PR                  9/9
 ```
 
-Evaluation details appear as nested lines while default evaluations run.
+The extension installs an always-on PBE footer. When idle, it shows the workspace/branch and a `PBE ready` command hint. During a PBE run, that footer expands into workflow mode showing current step, round, issue, branch, latest detail, evaluation progress, and failed-round count. Full evaluation details also appear in a custom progress widget while default evaluations run, without Pi's simple 10-line widget cap. The footer and workflow widget use subtle ANSI colors: soft green for PBE/pass states, amber for running work, red for failures, cyan labels, and muted gray for pending/skipped metadata.
 
 ## Failure behavior
 
-If evaluations fail, the Builder receives failed command results and review feedback. The harness retries up to 3 rounds.
+If evaluations fail, the Builder receives failed command results and review feedback. The harness retries up to 3 rounds. Each failed round is also summarized in the live UI and footer status so it is clear when a retry has happened.
 
 If the task still fails:
 

@@ -1,6 +1,8 @@
 # Pi Extensions
 
-Powerful extensions for the [Pi coding agent](https://github.com/badlogic/pi-mono) that solve real development workflow problems.
+Experimental extensions for the [Pi coding agent](https://github.com/badlogic/pi-mono) that explore development workflow ideas.
+
+> **Experimental / not production-ready:** These extensions are prototypes for personal workflow exploration. They may be incomplete, unstable, or unsafe for unattended use, and are not designed or supported for production environments.
 
 ## Demo
 

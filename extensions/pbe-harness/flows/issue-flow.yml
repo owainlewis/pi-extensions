@@ -1,0 +1,24 @@
+steps:
+  - name: plan
+    type: agent
+    prompt: prompts/PLAN.md
+
+  - name: check_plan
+    type: command
+    run: test -s "{{ .RunDir }}/PLAN.md" || { echo "Missing plan artifact: {{ .RunDir }}/PLAN.md" >&2; exit 1; }
+
+  - name: build
+    type: agent
+    prompt: prompts/BUILD.md
+
+  - name: review
+    type: agent
+    prompt: prompts/REVIEW.md
+
+  - name: refine
+    type: agent
+    prompt: prompts/REFINE.md
+
+  - name: finalizer
+    type: agent
+    prompt: prompts/FINALIZER.md

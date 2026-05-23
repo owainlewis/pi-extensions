@@ -1,114 +1,104 @@
 # PBE Extension
 
-Project-local Pi extension demonstrating a custom coding-agent harness.
-
-The main demo flow is:
+PBE now has two layers:
 
 ```text
-GitHub Issue → Plan → Branch → Build → Default Evals → Review → Commit → Push → PR
+/pbe-issue <issue>          # GitHub issue convenience flow
+/pbe-flow <flow.yml> <task> # generic YAML pipeline runner
 ```
 
-## Files
+## Generic flows
+
+A flow is an ordered YAML list of `agent` and `command` steps:
+
+```yaml
+steps:
+  - name: build
+    type: agent
+    prompt: flows/BUILD.md
+
+  - name: test
+    type: command
+    run: bin/rails test
+
+  - name: finalizer
+    type: agent
+    prompt: flows/FINALIZER.md
+```
+
+Run it with:
 
 ```text
-.pi/extensions/pbe/index.ts  # extension commands
-.pi/pbe/planner.md           # issue-to-plan subagent prompt
-.pi/pbe/builder.md           # Builder subagent prompt
-.pi/pbe/evaluator.md         # Review/evaluator subagent prompt
+/pbe-flow flows/build-flow.yml "Fix issue 21"
 ```
 
-## Commands
+Runtime behavior:
 
-### `/pbe-issue <issue-number-or-url>`
+- steps run in order
+- agent steps pass when nested `pi` exits successfully
+- command steps pass on exit code `0`
+- any command failure or agent runtime error stops the flow
+- progress is shown as a checklist
+- basic artifacts are written to `.pi/pbe/runs/<run-id>/`
 
-Runs the end-to-end issue harness:
+## Template variables
+
+Prompts and command strings support:
 
 ```text
-1. Fetching issue
-2. Writing plan
-3. Creating branch
-4. Writing code
-5. Running default evaluations
-6. Reviewing implementation
-7. Committing changes
-8. Pushing branch
-9. Opening PR
+{{ .Task }}
+{{ .RunID }}
+{{ .RunDir }}
+{{ .CWD }}
+{{ .FlowPath }}
+{{ .StepName }}
 ```
 
-Requirements:
-
-- run inside a git repository
-- clean working tree before starting
-- `gh` installed and authenticated
-- GitHub remote configured
-
-The issue is treated as the approved task. The harness writes one local planning artifact:
+Issue flows also receive:
 
 ```text
-docs/issues/<issue-number>/plan.md
+{{ .IssueNumber }}
+{{ .IssueTitle }}
+{{ .IssueURL }}
+{{ .Branch }}
 ```
 
-No approval gate is used. If evaluations pass, the harness commits, pushes, and opens a PR referencing the issue.
-
-### `/pbe-run <plan.md|task.md>`
-
-Runs the local Builder → default evaluations → review loop without git branch/commit/PR automation.
-
-## Evaluations
-
-V1 uses a simple default workflow:
+## `/pbe-issue`
 
 ```text
-Default evaluations = commands from plan/task `## Verify` section
-Review = always-run code review evaluator
+/pbe-issue 21
+/pbe-issue https://github.com/owner/repo/issues/21
 ```
 
-A generated plan should include:
+This command:
 
-````md
-## Verify
+1. requires a clean git worktree
+2. fetches the GitHub issue with `gh`
+3. creates a branch
+4. runs the default issue flow
 
-```bash
-npm test -- login
-npm run typecheck
-```
-````
-
-The UI shows each command check and then a separate review step.
-
-Future versions may add repo-level custom evaluations, but YAML is not required for the current flow.
-
-## UI
-
-During `/pbe-issue`, the extension shows a workflow checklist:
+Flow resolution:
 
 ```text
-PBE Issue Harness
-
-Issue: #123 Add login validation
-Branch: pbe/123-add-login-validation
-Round: 1/3
-
-✓ Fetching issue              1/9
-✓ Writing plan                2/9
-✓ Creating branch             3/9
-▶ Writing code                4/9
-○ Running default evaluations 5/9
-○ Reviewing implementation    6/9
-○ Committing changes          7/9
-○ Pushing branch              8/9
-○ Opening PR                  9/9
+.pi/pbe/issue-flow.yml                         # repo override
+~/.pi/agent/extensions/pbe/flows/issue-flow.yml # bundled default
 ```
 
-Evaluation details appear as nested lines while default evaluations run.
+The bundled flow is intentionally simple:
 
-## Failure behavior
+```text
+plan → check_plan → build → review → refine → finalizer
+```
 
-If evaluations fail, the Builder receives failed command results and review feedback. The harness retries up to 3 rounds.
+`check_plan` is a command step that fails fast if the planner did not write a non-empty `{{ .RunDir }}/PLAN.md` artifact.
 
-If the task still fails:
+The finalizer is an agent step that may commit, push, and open a PR using git/gh.
 
-- no commit is created
-- no branch is pushed
-- no PR is opened
-- the failure report is shown in the conversation
+## Notes
+
+- There are no loops in the generic flow runner.
+- There is no semantic agent pass/fail gate in the flow runner.
+- Users control artifacts from prompts, usually under `{{ .RunDir }}`.
+- Large nested-agent prompts are passed as temporary `@file` references instead of argv.
+- Nested agent steps show start/thinking/tool/text-preview progress and time out after 15 minutes by default. Override with `PBE_AGENT_TIMEOUT_SECONDS`.
+- See [`SMOKE.md`](SMOKE.md) for a command-only smoke test and optional nested-agent check.

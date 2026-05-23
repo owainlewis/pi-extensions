@@ -97,6 +97,19 @@ Non-blocking suggestions should not fail the task. Examples:
 
 Do not fail for future tasks that are explicitly out of scope.
 
+## Completion Protocol
+
+You MUST finish by calling the `complete_step` tool. The harness routes on that structured tool result, not on prose.
+
+Use statuses as follows:
+
+- `pass` - implementation is ready for PR.
+- `fail` - blocking implementation/test issues remain and Builder can fix them.
+- `unknown` - you cannot determine pass/fail because of missing context or protocol/inspection limits.
+- `error` - evaluation hit an unrecoverable runtime/tooling error.
+
+Still include the markdown report as your final written report before the tool call for human readability.
+
 ## Output Format
 
 Return a markdown report in this exact shape:
@@ -154,4 +167,6 @@ If FAIL, write concise instructions for the Builder.
 If PASS, write `None`.
 ```
 
-Return `PASS` only if the current task is complete, verified, and has no blocking issues.
+Return `PASS` only if the current task is complete, verified, and has no blocking issues. Then call `complete_step` with `status: "pass"`.
+
+If the report verdict is `FAIL`, call `complete_step` with `status: "fail"` and put concise Builder instructions in `feedback`.
